@@ -1,141 +1,201 @@
 #include <iostream>
-#include <cstdlib>
-#include <ctime>
-#include <chrono>
-#include <windows.h>
-#include <cmath>
+#include <vector>
+#include <string>
 #include <algorithm>
 #include <fstream>
+#include <chrono>
+#include <thread>
+#include <random>
 
-using namespace std;
-
-
-const int MAX_PLAYERS = 100;
-const int MAX_DIGITS = 5;
-const int MAX_TIME = 150;
+using std::cout;
+using std::cin;
+using std::endl;
+using std::string;
+using std::vector;
 
 struct Player {
     string name;
     int score;
+
+    bool operator<(const Player& other) const {
+        return score < other.score;
+    }
 };
 
-
-void printLeaderboard(Player players[], int numPlayers) {
-    cout << "------- Leaderboard -------" << endl;
-    cout << "Rank\tName\t\tScore" << endl;
-    sort(players, players+numPlayers, [](Player a, Player b){ return a.score > b.score; });
-    for (int i = 0; i < numPlayers; i++) {
-        cout << i+1 << "\t" << players[i].name << "\t\t" << players[i].score << endl;
+class MemoryGame {
+public:
+    MemoryGame() : m_rng(std::chrono::steady_clock::now().time_since_epoch().count()) {
+        loadLeaderboard();
     }
-}
 
+    void run() {
+        displayWelcomeScreen();
+        getPlayerName();
+        gameLoop();
+        displayGoodbyeScreen();
+    }
 
-void loadPlayers(Player players[], int& numPlayers) {
-    ifstream file("leaderboard.txt");
-    if (file.is_open()) {
+private:
+    vector<Player> m_players;
+    string m_currentPlayerName;
+    int m_score = 0;
+    
+    std::mt19937 m_rng;
+    void displayWelcomeScreen() const {
+        clearScreen();
+        cout << "========================================" << endl;
+        cout << "||        ADVANCED MEMORY GAME        ||" << endl;
+        cout << "========================================" << endl;
+        cout << endl;
+    }
+
+    void getPlayerName() {
+        cout << "Enter your operator handle (name): ";
         string name;
-        int score;
-        while (file >> name >> score) {
-            players[numPlayers].name = name;
-            players[numPlayers].score = score;
-            numPlayers++;
-        }
-        file.close();
-    }
-}
-
-bool checkPlayerExists(Player players[], int numPlayers, string name) {
-    for (int i = 0; i < numPlayers; i++) {
-        if (players[i].name == name) {
-            return true;
-        }
-    }
-    return false;
-}
-
-void savePlayers(Player players[], int numPlayers) {
-    ofstream file("leaderboard.txt");
-    if (file.is_open()) {
-        for (int i = 0; i < numPlayers; i++) {
-            file << players[i].name << " " << players[i].score << endl;
-        }
-        file.close();
-    }
-}
-
-int main() {
-    srand(time(NULL));
-    int level = 1;
-    int score = 0;
-    Player players[MAX_PLAYERS];
-    int numPlayers = 0;
-    string name;
-    
-    while (name.empty()) {
-        cout << "Welcome to the memory game! What's your name?" << endl;
-        getline(cin,name);
-        system("CLS");
-    }
-    
-    
-    cout << "Hi " << name << "! Get ready." << endl;
-    Sleep(800);
-    system("CLS");
-    
-    loadPlayers(players, numPlayers); 
-    
-    while (checkPlayerExists(players, numPlayers, name)) {
-        cout << "Username already exists in our database. Please enter a different name: ";
-        getline(cin, name);
-        Sleep(800);
-    }
-    
-    int timeLimit = MAX_TIME;
-    int numDigits = 1;
-    while (true) {
-    	
-        bool isNumberGame = rand() % 2 == 0;
-        // generate random number or letter string
-        string randomStr;
-        if (isNumberGame) {
-            int num = rand() % (int)(pow(10, numDigits));
-            randomStr = to_string(num);
-        } else {
-            string letters = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
-            int letterCount = min(numDigits, 26);
-            random_shuffle(letters.begin(), letters.end());
-            randomStr = letters.substr(0, letterCount);
-        }
-        
-        cout << "Memorize this " << (isNumberGame ? "number" : "letter") << ": " << randomStr << endl;
-        auto start = chrono::steady_clock::now();
-        Sleep(timeLimit);
-        auto end = chrono::steady_clock::now();
-        system("cls");
-        
-        // if time's up
-        auto elapsed = chrono::duration_cast<chrono::milliseconds>(end - start);
-        if (elapsed.count() >= timeLimit) {
-            string guess;
-            cout << "What was the " << (isNumberGame ? "number" : "letter") << "? ";
-            getline(cin, guess);
-            if (guess == randomStr) {
-                score++;
-                level++;
-                cout << "Correct! Your score is now " << score << endl;
-                numDigits = min(numDigits+1, MAX_DIGITS);
-                timeLimit = max(timeLimit-10, 50);
+        while (std::getline(cin, name)) {
+            if (!name.empty() && !playerExists(name)) {
+                m_currentPlayerName = name;
+                break;
+            }
+            if (name.empty()) {
+                cout << "Handle cannot be empty. Please try again: ";
             } else {
-                cout << "Sorry, that's incorrect. Your final score is " << score << endl;
-                players[numPlayers].name = name;
-                players[numPlayers].score = score;
-                numPlayers++;
-                savePlayers(players, numPlayers);
+                cout << "Handle already taken. Choose another: ";
+            }
+        }
+        cout << "Welcome, operator " << m_currentPlayerName << ". Initializing sequence..." << endl;
+        sleep(2000);
+    }
+
+    void gameLoop() {
+        int level = 1;
+        int timeLimit = 4000;
+        while (true) {
+            clearScreen();
+            cout << "Level: " << level << " | Score: " << m_score << endl;
+            cout << "---------------------------------" << endl;
+
+            string challenge = generateChallenge(level);
+            
+            cout << "Memorize sequence: " << challenge << endl;
+            countdown(timeLimit);
+            clearScreen();
+
+            cout << "Enter the sequence: ";
+            string guess;
+            std::getline(cin, guess);
+
+            if (guess == challenge) {
+                cout << "Correct! Sequence matched." << endl;
+                m_score += level * 10;
+                level++;
+                timeLimit = std::max(1000, timeLimit - 250);
+                sleep(1500);
+            } else {
+                cout << "Incorrect. Sequence terminated." << endl;
+                cout << "The correct sequence was: " << challenge << endl;
+                cout << "Your final score: " << m_score << endl;
+                sleep(3000);
                 break;
             }
         }
+        updateLeaderboard();
     }
 
-    printLeaderboard(players, numPlayers);
+    string generateChallenge(int length) {
+        std::uniform_int_distribution<int> dist(0, 1);
+        string challenge;
+
+        if (dist(m_rng) == 0) {
+            std::uniform_int_distribution<int> num_dist(0, 9);
+            for (int i = 0; i < length; ++i) {
+                challenge += std::to_string(num_dist(m_rng));
+            }
+        } else { 
+            string letters = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+            std::shuffle(letters.begin(), letters.end(), m_rng);
+            challenge = letters.substr(0, length);
+        }
+        return challenge;
+    }
+
+    void countdown(int milliseconds) const {
+        int steps = 10;
+        int step_duration = milliseconds / steps;
+        for (int i = steps; i > 0; --i) {
+            cout << "\rTime remaining: [" << string(i, '#') << string(steps - i, ' ') << "]" << std::flush;
+            sleep(step_duration);
+        }
+        cout << endl;
+    }
+
+
+    void loadLeaderboard() {
+        std::ifstream file("leaderboard.dat");
+        if (!file) return;
+
+        Player p;
+        while (file >> p.name >> p.score) {
+            m_players.push_back(p);
+        }
+    }
+
+    void updateLeaderboard() {
+        m_players.push_back({m_currentPlayerName, m_score});
+        std::sort(m_players.rbegin(), m_players.rend()); 
+
+        if (m_players.size() > 10) {
+            m_players.resize(10);
+        }
+
+        std::ofstream file("leaderboard.dat");
+        for (const auto& player : m_players) {
+            file << player.name << " " << player.score << endl;
+        }
+    }
+
+    void printLeaderboard() const {
+        cout << "\n------- LEADERBOARD (TOP 10) -------" << endl;
+        cout << "Rank\tName\t\tScore" << endl;
+        cout << "------------------------------------" << endl;
+        int rank = 1;
+        for (const auto& player : m_players) {
+            cout << rank++ << "\t" << player.name << "\t\t" << player.score << endl;
+        }
+        cout << "------------------------------------" << endl;
+    }
+    
+    bool playerExists(const string& name) const {
+        for(const auto& p : m_players) {
+            if (p.name == name) return true;
+        }
+        return false;
+    }
+
+    void displayGoodbyeScreen() const {
+        clearScreen();
+        printLeaderboard();
+        cout << "\nSession for operator " << m_currentPlayerName << " terminated." << endl;
+    }
+
+    
+
+    void clearScreen() const {
+        #ifdef _WIN32
+            system("cls");
+        #else
+            system("clear");
+        #endif
+    }
+    
+    void sleep(int milliseconds) const {
+        std::this_thread::sleep_for(std::chrono::milliseconds(milliseconds));
+    }
+};
+
+
+int main() {
+    MemoryGame game;
+    game.run();
     return 0;
 }
